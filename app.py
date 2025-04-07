@@ -10,18 +10,24 @@ from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from datetime import datetime
 
-# Load environment variables from .env file
+# Load environment variables from .env file (if it exists)
 load_dotenv()
 
-# Environment variables
-# MOCK_API_URL = os.getenv("MOCK_API_URL")  # Currently not used since data is POSTed
+# --- System Environment Variables ---
 MONGODB_URI = os.getenv("MONGODB_URI")
 if not MONGODB_URI:
     raise Exception("Missing MONGODB_URI in environment variables.")
 
-# Logflare configuration
-LOGFLARE_API_URL = "https://api.logflare.app/logs/json?source=bae2ec8c-0bf7-4561-96b1-c3f13dc3beb5"
-LOGFLARE_API_KEY = "kuvw1feGD8Yw"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise Exception("Missing OPENAI_API_KEY in environment variables.")
+
+LOGFLARE_API_KEY = os.getenv("LOGFLARE_API_KEY")
+if not LOGFLARE_API_KEY:
+    raise Exception("Missing LOGFLARE_API_KEY in environment variables.")
+
+LOGFLARE_SOURCE = os.getenv("LOGFLARE_SOURCE") or "bae2ec8c-0bf7-4561-96b1-c3f13dc3beb5"
+LOGFLARE_API_URL = f"https://api.logflare.app/logs/json?source={LOGFLARE_SOURCE}"
 
 # --- Candidate Data Extraction using OpenAI ---
 def extract_candidate_data(xxo):
@@ -30,7 +36,8 @@ def extract_candidate_data(xxo):
     The prompt instructs the model to extract entities (like candidate name, DOB, etc.)
     and return them as JSON.
     """
-    client = OpenAI()
+    # Instantiate OpenAI client with API key from system env
+    client = OpenAI(api_key=OPENAI_API_KEY)
     response = client.responses.create(
         model="gpt-4o",
         input=[
@@ -39,23 +46,24 @@ def extract_candidate_data(xxo):
                 "content": [
                     {
                         "type": "input_text",
-                        "text": """From this I want you to extract entities as following and return in JSON
-Candidate Name Exact Name Word To Word But Capitalized
-Date Of Birth: DD/MM
-Gender:
-Education:
-University:
-Total Experience: (in int)
-State: (Abbr)
-Technology:
-End Client:
-Interview Round:
-Job Title:
-Email ID:
-Contact No:
-Date of Interview:(MM/DD/YYYY Consider the Day as well, match it with Date for upcoming 2-3 weeks current date is march 28, 2025)
-Start Time Of Interview: (IN EASTERN TIME ZONE CONVERTED 12hrs AM/PM )
-End Time Of Interview: (IN EASTERN TIME ZONE COVNERTED 12hrs AM/PM) If NOt available add duration into Start time"""
+                        "text": (
+                            "From this I want you to extract entities as following and return in JSON \n"
+                            "Candidate Name Exact Name Word To Word But Capitalized\n"
+                            "Date Of Birth: DD/MM\n"
+                            "Gender:\n"
+                            "Education:\n"
+                            "University:\n"
+                            "Total Experience: (in int)\n"
+                            "State: (Abbr)\n"
+                            "Technology:\n"
+                            "End Client:\n"
+                            "Interview Round:\n"
+                            "Job Title:\n"
+                            "Email ID:\n"
+                            "Contact No:\n"
+                            "Date of Interview:(MM/DD/YYYY Consider the Day as well, match it with Date for upcoming 2-3 weeks current date is march 28, 2025)\n"
+                            "Start Time Of Interview: (IN EASTERN TIME ZONE CONVERTED 12hrs AM/PM)\n"
+                            "End Time Of Interview: (IN EASTERN TIME ZONE COVNERTED 12hrs AM/PM) If NOt available add duration into Start time\n"
                         )
                     }
                 ]
