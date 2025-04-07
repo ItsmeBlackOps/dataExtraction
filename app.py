@@ -14,7 +14,7 @@ from datetime import datetime
 load_dotenv()
 
 # Environment variables
-MOCK_API_URL = os.getenv("MOCK_API_URL")  # Currently not used since data is POSTed
+# MOCK_API_URL = os.getenv("MOCK_API_URL")  # Currently not used since data is POSTed
 MONGODB_URI = os.getenv("MONGODB_URI")
 if not MONGODB_URI:
     raise Exception("Missing MONGODB_URI in environment variables.")
