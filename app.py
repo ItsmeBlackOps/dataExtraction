@@ -39,24 +39,23 @@ def extract_candidate_data(xxo):
                 "content": [
                     {
                         "type": "input_text",
-                        "text": (
-                            "From this I want you to extract entities as following and return in JSON \n"
-                            "Candidate Name Exact Name Word To Word But Capitalized\n"
-                            "Date Of Birth: DD/MM\n"
-                            "Gender:\n"
-                            "Education:\n"
-                            "University:\n"
-                            "Total Experience: (in int)\n"
-                            "State: (Abbr)\n"
-                            "Technology:\n"
-                            "End Client:\n"
-                            "Interview Round:\n"
-                            "Job Title:\n"
-                            "Email ID:\n"
-                            "Contact No:\n"
-                            "Date of Interview:(MM/DD/YYYY)\n"
-                            "Start Time Of Interview: (IN EASTERN TIME ZONE CONVERTED 12hrs AM/PM)\n"
-                            "End Time Of Interview: (IN EASTERN TIME ZONE COVNERTED 12hrs AM/PM) If NOt available add duration into Start time\n"
+                        "text": """From this I want you to extract entities as following and return in JSON
+Candidate Name Exact Name Word To Word But Capitalized
+Date Of Birth: DD/MM
+Gender:
+Education:
+University:
+Total Experience: (in int)
+State: (Abbr)
+Technology:
+End Client:
+Interview Round:
+Job Title:
+Email ID:
+Contact No:
+Date of Interview:(MM/DD/YYYY Consider the Day as well, match it with Date for upcoming 2-3 weeks current date is march 28, 2025)
+Start Time Of Interview: (IN EASTERN TIME ZONE CONVERTED 12hrs AM/PM )
+End Time Of Interview: (IN EASTERN TIME ZONE COVNERTED 12hrs AM/PM) If NOt available add duration into Start time"""
                         )
                     }
                 ]
