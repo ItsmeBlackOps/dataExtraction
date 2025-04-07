@@ -8,6 +8,7 @@ from openai import OpenAI
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
+from datetime import datetime
 
 # Load environment variables from .env file
 load_dotenv()
@@ -22,11 +23,11 @@ if not MONGODB_URI:
 LOGFLARE_API_URL = "https://api.logflare.app/logs/json?source=bae2ec8c-0bf7-4561-96b1-c3f13dc3beb5"
 LOGFLARE_API_KEY = "kuvw1feGD8Yw"
 
-# --- Candidate Data Extraction ---
+# --- Candidate Data Extraction using OpenAI ---
 def extract_candidate_data(xxo):
     """
     Uses OpenAI to extract candidate details from the provided text.
-    The prompt instructs the model to extract entities (like candidate name, DOB, gender, etc.)
+    The prompt instructs the model to extract entities (like candidate name, DOB, etc.)
     and return them as JSON.
     """
     client = OpenAI()
@@ -38,23 +39,25 @@ def extract_candidate_data(xxo):
                 "content": [
                     {
                         "type": "input_text",
-                        "text": """From this I want you to extract entities as following and return in JSON
-Candidate Name Exact Name Word To Word But Capitalized
-Date Of Birth: DD/MM
-Gender:
-Education:
-University:
-Total Experience: (in int)
-State: (Abbr)
-Technology:
-End Client:
-Interview Round:
-Job Title:
-Email ID:
-Contact No:
-Date of Interview:(MM/DD/YYYY Consider the Day as well, match it with Date for upcoming 2-3 weeks current date is march 28, 2025)
-Start Time Of Interview: (IN EASTERN TIME ZONE CONVERTED 12hrs AM/PM )
-End Time Of Interview: (IN EASTERN TIME ZONE COVNERTED 12hrs AM/PM) If NOt available add duration into Start time"""
+                        "text": (
+                            "From this I want you to extract entities as following and return in JSON \n"
+                            "Candidate Name Exact Name Word To Word But Capitalized\n"
+                            "Date Of Birth: DD/MM\n"
+                            "Gender:\n"
+                            "Education:\n"
+                            "University:\n"
+                            "Total Experience: (in int)\n"
+                            "State: (Abbr)\n"
+                            "Technology:\n"
+                            "End Client:\n"
+                            "Interview Round:\n"
+                            "Job Title:\n"
+                            "Email ID:\n"
+                            "Contact No:\n"
+                            "Date of Interview:(MM/DD/YYYY)\n"
+                            "Start Time Of Interview: (IN EASTERN TIME ZONE CONVERTED 12hrs AM/PM)\n"
+                            "End Time Of Interview: (IN EASTERN TIME ZONE COVNERTED 12hrs AM/PM) If NOt available add duration into Start time\n"
+                        )
                     }
                 ]
             },
@@ -80,12 +83,10 @@ End Time Of Interview: (IN EASTERN TIME ZONE COVNERTED 12hrs AM/PM) If NOt avail
         top_p=1,
         store=True
     )
-    # Debug prints can help during development (you can remove or comment them out later)
     x = response.output[0].content[0].text
     print("Raw OpenAI response:", x)
     clean_text = x.strip("```json\n").strip("```").strip()
     print("Cleaned JSON response:", clean_text)
-    # Convert JSON string to Python dictionary
     data = json.loads(clean_text)
     print("Extracted candidate data:", data)
     return data
@@ -103,8 +104,11 @@ repliesBody_collection = db['repliesBody']
 def log_to_logflare(log_data):
     """
     Sends the provided log_data as JSON to Logflare.
-    This function uses the requests library to post the data.
+    Extra metadata (timestamp and collection type) should already be added to log_data.
     """
+    # Ensure the log entry has a timestamp
+    if 'log_timestamp' not in log_data:
+        log_data['log_timestamp'] = datetime.utcnow().isoformat() + "Z"
     try:
         headers = {
             'Content-Type': 'application/json; charset=utf-8',
@@ -115,6 +119,7 @@ def log_to_logflare(log_data):
         print("Successfully logged to Logflare.")
     except Exception as e:
         print("Error logging to Logflare:", e)
+        raise e
 
 # --- API Endpoint ---
 @app.route('/process', methods=['POST'])
@@ -124,52 +129,70 @@ def process_data():
       - Checks if the subject already exists in MongoDB.
       - If not, extracts candidate data via OpenAI and merges it with the item.
       - Depending on the subject, inserts the record into either the taskBody or repliesBody collection.
-      - Logs each processed item to Logflare.
+      - Logs each processed item to Logflare with extra metadata (timestamp and collection type).
+      - Aggregates detailed results for each item, providing sophisticated error responses.
     """
+    results = []
     data = request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
     for item in data:
-        # Normalize the subject for case-insensitive comparison.
+        item_id = item.get('id', 'unknown')
         subject = item.get('subject', '').strip().lower()
-        
+
         # Check if the subject already exists in either collection.
         exists_in_task = taskBody_collection.find_one({'subject': subject})
         exists_in_replies = repliesBody_collection.find_one({'subject': subject})
         if exists_in_task or exists_in_replies:
-            print(f"Subject '{subject}' already processed. Skipping...")
+            msg = f"Subject '{subject}' already processed. Skipping item with id {item_id}."
+            print(msg)
+            results.append({'id': item_id, 'status': 'skipped', 'message': msg})
             continue
 
         try:
-            # Extract candidate data from the item's body
+            # Extract candidate data using OpenAI
             candidate_data = extract_candidate_data(item.get('body', ''))
         except Exception as e:
-            print(f"Error extracting candidate data for item with id {item.get('id')}: {e}")
+            error_msg = f"Extraction error for item with id {item_id}: {str(e)}"
+            print(error_msg)
+            results.append({'id': item_id, 'status': 'error', 'message': error_msg})
             continue
 
-        # Merge the original item with the extracted candidate data.
         final_data = {**item, **candidate_data}
+        collection_type = ''
 
-        # Decide which MongoDB collection to use based on subject content.
-        if 'interview support' in subject and not subject.startswith('re:'):
-            try:
+        try:
+            # Insert into the appropriate collection based on subject content.
+            if 'interview support' in subject and not subject.startswith('re:'):
+                collection_type = 'taskBody'
                 taskBody_collection.insert_one(final_data)
-                print(f"Inserted item with id {item.get('id')} into taskBody.")
-            except Exception as e:
-                print(f"Error inserting item into taskBody with id {item.get('id')}: {e}")
-        else:
-            try:
+                print(f"Inserted item with id {item_id} into taskBody.")
+            else:
+                collection_type = 'repliesBody'
                 repliesBody_collection.insert_one(final_data)
-                print(f"Inserted item with id {item.get('id')} into repliesBody.")
-            except Exception as e:
-                print(f"Error inserting item into repliesBody with id {item.get('id')}: {e}")
+                print(f"Inserted item with id {item_id} into repliesBody.")
+            results.append({'id': item_id, 'status': 'success', 'collection': collection_type})
+        except Exception as e:
+            error_msg = f"Insertion error for item with id {item_id} into {collection_type}: {str(e)}"
+            print(error_msg)
+            results.append({'id': item_id, 'status': 'error', 'message': error_msg})
+            continue
 
-        # Log the processed item to Logflare.
-        log_to_logflare(final_data)
+        # Add additional metadata before logging.
+        final_data['log_timestamp'] = datetime.utcnow().isoformat() + "Z"
+        final_data['collection_type'] = collection_type
 
-    return jsonify({"status": "success"}), 200
+        try:
+            log_to_logflare(final_data)
+        except Exception as e:
+            error_msg = f"Logging error for item with id {item_id}: {str(e)}"
+            print(error_msg)
+            results.append({'id': item_id, 'status': 'warning', 'message': error_msg})
+
+    overall_status = "completed"
+    return jsonify({"status": overall_status, "results": results}), 200
 
 if __name__ == '__main__':
-    # Running the Flask app in debug mode for detailed error output (for development purposes)
+    # Run the app in debug mode for detailed error output.
     app.run(debug=True)
